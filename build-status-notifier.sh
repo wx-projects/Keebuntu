@@ -112,6 +112,6 @@ rm -f "$DIST_DIR/$PACKAGE_NAME.tar.gz"
 tar -C "$BUILD_DIR/package" -czf "$DIST_DIR/$PACKAGE_NAME.tar.gz" "$PACKAGE_NAME"
 tar -tzf "$DIST_DIR/$PACKAGE_NAME.tar.gz" >/dev/null
 tar -tzf "$DIST_DIR/$PACKAGE_NAME.tar.gz" |
-  grep -Fxq "$PACKAGE_NAME/plugins/dbus-sharp-glib.dll.config"
+  grep -Fx "$PACKAGE_NAME/plugins/dbus-sharp-glib.dll.config" >/dev/null
 
 echo "Created $DIST_DIR/$PACKAGE_NAME.tar.gz"

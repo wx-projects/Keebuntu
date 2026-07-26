@@ -48,6 +48,7 @@ EOF_CONTROL
 rm -f "$OUTPUT"
 dpkg-deb --root-owner-group --build "$DEB_ROOT" "$OUTPUT"
 dpkg-deb --info "$OUTPUT" >/dev/null
-dpkg-deb --contents "$OUTPUT" | grep -Fq './usr/lib/keepass2/Plugins/keebuntu/dbus-sharp-glib.dll.config'
+dpkg-deb --contents "$OUTPUT" |
+  grep -F './usr/lib/keepass2/Plugins/keebuntu/dbus-sharp-glib.dll.config' >/dev/null
 
 echo "Created $OUTPUT"
