@@ -29,6 +29,8 @@ Each `vX.Y.Z` GitHub Release contains:
 
 - `keebuntu-status-notifier-X.Y.Z.tar.gz`: generic Linux payload and installer;
 - `keepass2-plugin-status-notifier_X.Y.Z_all.deb`: Debian/Ubuntu package;
+- `keepass-plugin-keebuntu-status-notifier-X.Y.Z-1-any.pkg.tar.zst`: directly
+  installable Arch Linux package;
 - `keepass-plugin-keebuntu-status-notifier-aur-X.Y.Z.tar.gz`: `PKGBUILD` and
   `.SRCINFO` ready for AUR publication;
 - `SHA256SUMS`: checksums for all release assets.
@@ -56,8 +58,15 @@ sudo apt install ./keepass2-plugin-status-notifier_X.Y.Z_all.deb
 
 ### Arch Linux
 
-Extract the AUR source archive and build it with `makepkg`. The package depends
-on `keepass`, `mono`, `gtk-sharp-2` and `dbus-glib`.
+Install the ready-made package from the GitHub Release:
+
+```bash
+sudo pacman -U ./keepass-plugin-keebuntu-status-notifier-X.Y.Z-1-any.pkg.tar.zst
+```
+
+The package depends on `keepass`, `mono`, `gtk-sharp-2` and `dbus-glib`. The AUR
+source archive remains available for reviewing or publishing the corresponding
+`PKGBUILD` and `.SRCINFO`.
 
 ## Building from source
 
@@ -68,7 +77,11 @@ packages, then run:
 ./build-status-notifier.sh
 ./packaging/debian/build-deb.sh
 ./packaging/arch/build-aur-source.sh
+./packaging/arch/build-package.sh
 ```
+
+`build-package.sh` uses a non-root local `makepkg` when available; otherwise it
+uses the `archlinux:base-devel` Docker image.
 
 To build against a non-standard KeePass installation:
 

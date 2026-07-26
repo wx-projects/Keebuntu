@@ -49,13 +49,16 @@ jobs:
             build-status-notifier.sh \
             packaging/install.sh \
             packaging/debian/build-deb.sh \
-            packaging/arch/build-aur-source.sh
+            packaging/arch/build-aur-source.sh \
+            packaging/arch/build-package.sh
           ./build-status-notifier.sh
           ./packaging/debian/build-deb.sh
           ./packaging/arch/build-aur-source.sh
+          ./packaging/arch/build-package.sh
           (cd dist && sha256sum \
             keebuntu-status-notifier-*.tar.gz \
             keepass2-plugin-status-notifier_*_all.deb \
+            keepass-plugin-keebuntu-status-notifier-*.pkg.tar.zst \
             keepass-plugin-keebuntu-status-notifier-aur-*.tar.gz \
             > SHA256SUMS)
 
@@ -71,6 +74,6 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "Keebuntu Status Notifier $VERSION" \
-              --notes "Maintained Linux StatusNotifierItem plugin for KeePass 2.x. Includes a generic archive, Debian package, AUR source package and SHA-256 checksums." \
+              --notes "Maintained Linux StatusNotifierItem plugin for KeePass 2.x. Includes a generic archive, Debian package, installable Arch Linux package, AUR source package and SHA-256 checksums." \
               dist/*
           fi
