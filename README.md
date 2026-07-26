@@ -1,14 +1,32 @@
 # Keebuntu
 
 Keebuntu contains Linux desktop integration plugins for KeePass 2.x running
-under Mono. This fork currently maintains and releases the **Status Notifier**
-plugin. The legacy GTK tray icon and Unity launcher sources remain in the
-repository but are not included in current release packages.
+under Mono. This fork maintains two tray implementations for different panel
+protocols.
+
+## Classic GTK Status Icon
+
+Use the classic GTK2 plugin with i3bar and other trays that directly support
+the XEmbed system tray protocol. It creates only the KeePass tray icon and does
+not start a global StatusNotifier-to-XEmbed bridge, so unrelated application
+icons are not re-rendered.
+
+The maintained implementation:
+
+- creates a direct GTK2/XEmbed tray icon;
+- loads the icon from the KeePass/AppImage icon directory instead of relying on
+  the host icon theme;
+- disables the Mono WinForms tray icon only after the GTK icon is ready;
+- retains KeePass' existing tray menu and restore behavior;
+- no longer depends on ImageMagick or a StatusNotifierWatcher.
+
+Do not install it together with the Status Notifier plugin or another KeePass
+tray plugin.
 
 ## Status Notifier
 
-The plugin exports a KDE StatusNotifierItem and D-Bus menu. It is intended for
-KDE Plasma and also works with desktop panels that provide a compatible
+The Status Notifier plugin exports a KDE StatusNotifierItem and D-Bus menu. It
+is intended for KDE Plasma and panels that already provide a compatible
 AppIndicator/StatusNotifier host.
 
 The maintained implementation:
@@ -20,53 +38,46 @@ The maintained implementation:
 - invokes KeePass' own **Tray / Untray** command so existing lock-on-minimize
   settings continue to apply.
 
-Do not install this plugin together with Keebuntu's classic tray icon or another
+Do not install this plugin together with the classic GTK tray icon or another
 KeePass application-indicator plugin.
 
 ## Release packages
 
 Each `vX.Y.Z` GitHub Release contains:
 
-- `keebuntu-status-notifier-X.Y.Z.tar.gz`: generic Linux payload and installer;
+- `keebuntu-gtk-status-icon-X.Y.Z.tar.gz`: classic GTK2/XEmbed plugin for i3bar;
+- `keebuntu-status-notifier-X.Y.Z.tar.gz`: generic StatusNotifier payload;
 - `keepass2-plugin-status-notifier_X.Y.Z_all.deb`: Debian/Ubuntu package;
 - `keepass-plugin-keebuntu-status-notifier-X.Y.Z-1-any.pkg.tar.zst`: directly
-  installable Arch Linux package;
-- `keepass-plugin-keebuntu-status-notifier-aur-X.Y.Z.tar.gz`: `PKGBUILD` and
-  `.SRCINFO` ready for AUR publication;
+  installable Arch Linux StatusNotifier package;
+- `keepass-plugin-keebuntu-status-notifier-aur-X.Y.Z.tar.gz`: AUR source package;
 - `SHA256SUMS`: checksums for all release assets.
 
 ### Generic installation
 
-Extract the release archive, enter its directory, then run as root:
+Extract the required archive, enter its directory, then run as root:
 
 ```bash
 ./install.sh
 ```
 
-The installer detects `/usr/share/keepass` and `/usr/lib/keepass2`. For a custom
-KeePass application directory:
+For a custom KeePass application directory:
 
 ```bash
 ./install.sh --app-dir /absolute/path/to/keepass
 ```
 
-### Debian/Ubuntu
+### Debian/Ubuntu Status Notifier
 
 ```bash
 sudo apt install ./keepass2-plugin-status-notifier_X.Y.Z_all.deb
 ```
 
-### Arch Linux
-
-Install the ready-made package from the GitHub Release:
+### Arch Linux Status Notifier
 
 ```bash
 sudo pacman -U ./keepass-plugin-keebuntu-status-notifier-X.Y.Z-1-any.pkg.tar.zst
 ```
-
-The package depends on `keepass`, `mono`, `gtk-sharp-2` and `dbus-glib`. The AUR
-source archive remains available for reviewing or publishing the corresponding
-`PKGBUILD` and `.SRCINFO`.
 
 ## Building from source
 
@@ -75,30 +86,20 @@ packages, then run:
 
 ```bash
 ./build-status-notifier.sh
+./build-gtk-status-icon.sh
 ./packaging/debian/build-deb.sh
 ./packaging/arch/build-aur-source.sh
 ./packaging/arch/build-package.sh
 ```
 
-`build-package.sh` uses a non-root local `makepkg` when available; otherwise it
-uses the `archlinux:base-devel` Docker image.
-
 To build against a non-standard KeePass installation:
 
 ```bash
 KEEPASS_EXE=/absolute/path/to/KeePass.exe ./build-status-notifier.sh
+KEEPASS_EXE=/absolute/path/to/KeePass.exe ./build-gtk-status-icon.sh
 ```
 
 Generated files are written only to `build/` and `dist/`.
-
-## Legacy plugins
-
-The following upstream components remain available as unmaintained source code:
-
-- `GtkStatusIcon`: classic GTK status icon for older Cinnamon/MATE setups;
-- `UnityLauncherPlugin`: Unity launcher quicklist integration.
-
-They are intentionally excluded from the maintained Status Notifier release.
 
 ## License
 

@@ -1,4 +1,4 @@
-name: Build and Release Status Notifier
+name: Build and Release Keebuntu Tray Plugins
 
 on:
   push:
@@ -10,7 +10,9 @@ on:
       - 'KeePassExe.proj'
       - 'DBus/**'
       - 'StatusNotifierPlugin/**'
+      - 'GtkStatusIcon/**'
       - 'build-status-notifier.sh'
+      - 'build-gtk-status-icon.sh'
       - 'packaging/**'
       - 'THIRD_PARTY_NOTICES.md'
   workflow_dispatch:
@@ -19,7 +21,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: keebuntu-status-notifier-release
+  group: keebuntu-tray-plugins-release
   cancel-in-progress: false
 
 jobs:
@@ -47,16 +49,20 @@ jobs:
         run: |
           chmod +x \
             build-status-notifier.sh \
+            build-gtk-status-icon.sh \
             packaging/install.sh \
+            packaging/install-gtk-status-icon.sh \
             packaging/debian/build-deb.sh \
             packaging/arch/build-aur-source.sh \
             packaging/arch/build-package.sh
           ./build-status-notifier.sh
+          ./build-gtk-status-icon.sh
           ./packaging/debian/build-deb.sh
           ./packaging/arch/build-aur-source.sh
           ./packaging/arch/build-package.sh
           (cd dist && sha256sum \
             keebuntu-status-notifier-*.tar.gz \
+            keebuntu-gtk-status-icon-*.tar.gz \
             keepass2-plugin-status-notifier_*_all.deb \
             keepass-plugin-keebuntu-status-notifier-*.pkg.tar.zst \
             keepass-plugin-keebuntu-status-notifier-aur-*.tar.gz \
@@ -73,7 +79,7 @@ jobs:
           else
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
-              --title "Keebuntu Status Notifier $VERSION" \
-              --notes "Maintained Linux StatusNotifierItem plugin for KeePass 2.x. Includes a generic archive, Debian package, installable Arch Linux package, AUR source package and SHA-256 checksums." \
+              --title "Keebuntu Tray Plugins $VERSION" \
+              --notes "Linux tray integration plugins for KeePass 2.x: StatusNotifierItem for compatible desktops and a classic GTK2 XEmbed plugin for i3bar and other legacy trays. Includes release checksums." \
               dist/*
           fi

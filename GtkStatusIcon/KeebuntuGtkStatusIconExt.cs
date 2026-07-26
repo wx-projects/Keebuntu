@@ -1,285 +1,337 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Threading;
+using System.Windows.Forms;
 
-using ImageMagick.MagickCore;
-using ImageMagick.MagickWand;
 using KeePass.Plugins;
 using KeePassLib;
-using Keebuntu.DBus;
 
 namespace GtkStatusIcon
 {
   public class GtkStatusIconExt : Plugin
   {
-    IPluginHost pluginHost;
-    Gtk.StatusIcon statusIcon;
-    Gtk.Menu statusIconMenu;
-    bool activateWorkaroundNeeded;
-    System.Windows.Forms.Timer activateWorkaroundTimer;
+    private IPluginHost pluginHost;
+    private Gtk.StatusIcon statusIcon;
+    private Gtk.Menu statusIconMenu;
+    private bool activateWorkaroundNeeded;
+    private bool gtkWorkerRequested;
+    private Timer activateWorkaroundTimer;
 
     public override bool Initialize(IPluginHost host)
     {
+      if (host == null) {
+        throw new ArgumentNullException("host");
+      }
+
       pluginHost = host;
-
-      // purposely break the winforms tray icon so it is not displayed
-      var mainWindowType = pluginHost.MainWindow.GetType();
-      var ntfTrayField = mainWindowType.GetField("m_ntfTray",
-                               BindingFlags.Instance | BindingFlags.NonPublic);
-      var ntfField = ntfTrayField.FieldType.GetField("m_ntf",
-                               BindingFlags.Instance | BindingFlags.NonPublic);
-      ntfField.SetValue(ntfTrayField.GetValue(pluginHost.MainWindow), null);
-
-      activateWorkaroundTimer = new System.Windows.Forms.Timer();
+      activateWorkaroundTimer = new Timer();
       activateWorkaroundTimer.Interval = 100;
       activateWorkaroundTimer.Tick += OnActivateWorkaroundTimerTick;
 
-      var threadStarted = false;
       try {
-        DBusBackgroundWorker.Request();
-        threadStarted = true;
-        DBusBackgroundWorker.InvokeGtkThread((Action)GtkDBusInit).Wait();
+        GtkBackgroundWorker.Request();
+        gtkWorkerRequested = true;
+
+        var initTask = GtkBackgroundWorker.InvokeGtkThread((Action)GtkInit);
+        if (!initTask.Wait(TimeSpan.FromSeconds(10))) {
+          throw new TimeoutException("Timed out while creating the GTK tray icon.");
+        }
+
+        DisableBuiltInTrayIcon();
 
         pluginHost.MainWindow.Activated += MainWindow_Activated;
         pluginHost.MainWindow.Resize += MainWindow_Resize;
+        return true;
       } catch (Exception ex) {
         Debug.Fail(ex.ToString());
-        if (threadStarted) {
-          Terminate();
-        }
+        Terminate();
         return false;
       }
-      return true;
     }
 
     public override void Terminate()
     {
-      pluginHost.MainWindow.Activated += MainWindow_Activated;
-      pluginHost.MainWindow.Resize -= MainWindow_Resize;
-      statusIcon.PopupMenu -= OnPopupMenu;
-      try {
-        DBusBackgroundWorker.Release();
-      } catch (Exception ex) {
-        Debug.Fail(ex.ToString());
+      if (pluginHost != null) {
+        pluginHost.MainWindow.Activated -= MainWindow_Activated;
+        pluginHost.MainWindow.Resize -= MainWindow_Resize;
+      }
+
+      if (gtkWorkerRequested) {
+        try {
+          var disposeTask = GtkBackgroundWorker.InvokeGtkThread(() => {
+            if (statusIcon != null) {
+              statusIcon.PopupMenu -= OnPopupMenu;
+              statusIcon.Visible = false;
+              statusIcon.Dispose();
+              statusIcon = null;
+            }
+
+            if (statusIconMenu != null) {
+              statusIconMenu.Dispose();
+              statusIconMenu = null;
+            }
+          });
+          disposeTask.Wait(TimeSpan.FromSeconds(5));
+        } catch (Exception ex) {
+          Debug.Fail(ex.ToString());
+        }
+
+        GtkBackgroundWorker.Release();
+        gtkWorkerRequested = false;
+      }
+
+      if (activateWorkaroundTimer != null) {
+        activateWorkaroundTimer.Stop();
+        activateWorkaroundTimer.Tick -= OnActivateWorkaroundTimerTick;
+        activateWorkaroundTimer.Dispose();
+        activateWorkaroundTimer = null;
       }
     }
 
-    void MainWindow_Activated(object sender, EventArgs e)
+    private void DisableBuiltInTrayIcon()
     {
-      if (activateWorkaroundNeeded) {
-        // see explanation in OnActivateWorkaroundTimerTick()
+      var mainWindowType = pluginHost.MainWindow.GetType();
+      var ntfTrayField = mainWindowType.GetField(
+        "m_ntfTray", BindingFlags.Instance | BindingFlags.NonPublic);
+      if (ntfTrayField == null) {
+        throw new MissingFieldException(mainWindowType.FullName, "m_ntfTray");
+      }
+
+      var ntfTray = ntfTrayField.GetValue(pluginHost.MainWindow);
+      if (ntfTray == null) {
+        return;
+      }
+
+      var ntfField = ntfTrayField.FieldType.GetField(
+        "m_ntf", BindingFlags.Instance | BindingFlags.NonPublic);
+      if (ntfField == null) {
+        throw new MissingFieldException(ntfTrayField.FieldType.FullName, "m_ntf");
+      }
+
+      var notifyIcon = ntfField.GetValue(ntfTray) as NotifyIcon;
+      if (notifyIcon != null) {
+        notifyIcon.Visible = false;
+        notifyIcon.Dispose();
+      }
+
+      ntfField.SetValue(ntfTray, null);
+    }
+
+    private void MainWindow_Activated(object sender, EventArgs e)
+    {
+      if (activateWorkaroundNeeded && activateWorkaroundTimer != null) {
         activateWorkaroundTimer.Start();
         activateWorkaroundNeeded = false;
       }
     }
 
-    void MainWindow_Resize(object sender, EventArgs e)
+    private void MainWindow_Resize(object sender, EventArgs e)
     {
       if (!pluginHost.MainWindow.Visible &&
-          pluginHost.MainWindow.WindowState ==
-          System.Windows.Forms.FormWindowState.Minimized)
-      {
-        // see explanation in OnActivateWorkaroundTimerTick()
+          pluginHost.MainWindow.WindowState == FormWindowState.Minimized) {
         activateWorkaroundNeeded = true;
       }
     }
 
-    void OnPopupMenu(object sender, Gtk.PopupMenuArgs e)
+    private void OnPopupMenu(object sender, Gtk.PopupMenuArgs e)
     {
       try {
         var mainWindowType = pluginHost.MainWindow.GetType();
-        var cxtTrayField = mainWindowType.GetField("m_ctxTray",
-          BindingFlags.Instance | BindingFlags.NonPublic);
-        var ctxTray = cxtTrayField.GetValue(pluginHost.MainWindow);
+        var ctxTrayField = mainWindowType.GetField(
+          "m_ctxTray", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (ctxTrayField == null) {
+          return;
+        }
 
-        // Synthesize menu open events. These are expected by KeePass and
-        // other plugins
+        var ctxTray = ctxTrayField.GetValue(pluginHost.MainWindow);
+        if (ctxTray == null) {
+          return;
+        }
 
-        var onOpening = ctxTray.GetType().GetMethod("OnOpening",
-          BindingFlags.Instance | BindingFlags.NonPublic);
-        DBusBackgroundWorker.InvokeWinformsThread(() =>
-          onOpening.Invoke(ctxTray, new[] { new CancelEventArgs() }));
+        var onOpening = ctxTray.GetType().GetMethod(
+          "OnOpening", BindingFlags.Instance | BindingFlags.NonPublic);
+        var onOpened = ctxTray.GetType().GetMethod(
+          "OnOpened", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        statusIconMenu.Popup(null, null, null, (uint)e.Args[0], (uint)e.Args[1]);
+        if (onOpening != null) {
+          GtkBackgroundWorker.InvokeWinformsThread(() =>
+            onOpening.Invoke(ctxTray, new object[] { new CancelEventArgs() }));
+        }
 
-        var onOpened = ctxTray.GetType().GetMethod("OnOpened",
-          BindingFlags.Instance | BindingFlags.NonPublic);
-        DBusBackgroundWorker.InvokeWinformsThread(() =>
-          onOpened.Invoke(ctxTray, new[] { new CancelEventArgs() }));
+        statusIconMenu.Popup(
+          null, null, null, (uint)e.Args[0], (uint)e.Args[1]);
+
+        if (onOpened != null) {
+          GtkBackgroundWorker.InvokeWinformsThread(() =>
+            onOpened.Invoke(ctxTray, new object[] { EventArgs.Empty }));
+        }
       } catch (Exception ex) {
         Debug.Fail(ex.ToString());
       }
     }
 
-    /// <summary>
-    /// Initalize Gtk and DBus stuff
-    /// </summary>
-    private void GtkDBusInit()
+    private void GtkInit()
     {
-      /* setup StatusIcon */
-
       statusIcon = new Gtk.StatusIcon();
-      statusIcon.IconName = "keepass2-locked";
-#if DEBUG
-      statusIcon.File = Path.GetFullPath("Resources/icons/hicolor/16x16/apps/keepass2-locked.png");
-#endif
-      statusIcon.Tooltip = PwDefs.ProductName;
 
+      string iconPath = FindIconPath();
+      if (!String.IsNullOrEmpty(iconPath)) {
+        statusIcon.File = iconPath;
+      } else {
+        statusIcon.IconName = "keepass2-locked";
+      }
+
+      statusIcon.Tooltip = PwDefs.ProductName;
+      statusIcon.Visible = true;
       statusIconMenu = new Gtk.Menu();
 
       var trayContextMenu = pluginHost.MainWindow.TrayContextMenu;
-      // make copy of item list to prevent list changed exception when iterating
-      var menuItems =
-        new System.Windows.Forms.ToolStripItem[trayContextMenu.Items.Count];
+      var menuItems = new ToolStripItem[trayContextMenu.Items.Count];
       trayContextMenu.Items.CopyTo(menuItems, 0);
-      trayContextMenu.ItemAdded += (sender, e) =>
-        DBusBackgroundWorker.InvokeGtkThread
-          (() => ConvertAndAddMenuItem(e.Item, statusIconMenu));
 
-      foreach (System.Windows.Forms.ToolStripItem item in menuItems) {
+      trayContextMenu.ItemAdded += (sender, e) =>
+        GtkBackgroundWorker.InvokeGtkThread(
+          () => ConvertAndAddMenuItem(e.Item, statusIconMenu));
+
+      foreach (ToolStripItem item in menuItems) {
         ConvertAndAddMenuItem(item, statusIconMenu);
       }
 
       statusIcon.PopupMenu += OnPopupMenu;
-      statusIcon.Activate += (sender, e) => {
-        DBusBackgroundWorker.InvokeWinformsThread
-        (() => pluginHost.MainWindow.EnsureVisibleForegroundWindow(true, true));
-      };
+      statusIcon.Activate += (sender, e) =>
+        GtkBackgroundWorker.InvokeWinformsThread(() =>
+          pluginHost.MainWindow.EnsureVisibleForegroundWindow(true, true));
     }
 
-    private void ConvertAndAddMenuItem(System.Windows.Forms.ToolStripItem item,
-                                       Gtk.MenuShell gtkMenuShell)
+    private static string FindIconPath()
     {
-      if (item is System.Windows.Forms.ToolStripMenuItem) {
+      string appDir = Environment.GetEnvironmentVariable("APPDIR");
+      string[] sizes = new string[] { "16x16", "32x32", "48x48" };
 
-        var winformMenuItem = item as System.Windows.Forms.ToolStripMenuItem;
-
-        // windows forms use '&' for mneumonic, gtk uses '_'
-        var gtkMenuItem = new Gtk.ImageMenuItem(winformMenuItem.Text.Replace("&", "_"));
-
-        if (winformMenuItem.Image != null) {
-          MemoryStream memStream;
-          var image = winformMenuItem.Image;
-          if (image.Width != 16 || image.Height != 16) {
-            var newImage = ResizeImage(image, 16, 16);
-            memStream = new MemoryStream(newImage);
-          } else {
-            memStream = new MemoryStream();
-            image.Save(memStream, ImageFormat.Png);
-            memStream.Position = 0;
+      if (!String.IsNullOrEmpty(appDir)) {
+        foreach (string size in sizes) {
+          string path = Path.Combine(
+            appDir, "share", "icons", "hicolor", size, "apps",
+            "keepass2-locked.png");
+          if (File.Exists(path)) {
+            return path;
           }
-          gtkMenuItem.Image = new Gtk.Image(memStream);
+        }
+      }
+
+      foreach (string size in sizes) {
+        string path = Path.Combine(
+          "/usr/share/icons/hicolor", size, "apps", "keepass2-locked.png");
+        if (File.Exists(path)) {
+          return path;
+        }
+      }
+
+      return null;
+    }
+
+    private void ConvertAndAddMenuItem(
+      ToolStripItem item, Gtk.MenuShell gtkMenuShell)
+    {
+      var winformsMenuItem = item as ToolStripMenuItem;
+      if (winformsMenuItem != null) {
+        var gtkMenuItem = new Gtk.ImageMenuItem(
+          winformsMenuItem.Text.Replace("&", "_"));
+
+        if (winformsMenuItem.Image != null) {
+          byte[] imageBytes = ResizeImage(
+            winformsMenuItem.Image, 16, 16);
+          gtkMenuItem.Image = new Gtk.Image(new MemoryStream(imageBytes));
         }
 
-        gtkMenuItem.TooltipText = winformMenuItem.ToolTipText;
-        gtkMenuItem.Visible = winformMenuItem.Visible;
-        gtkMenuItem.Sensitive = winformMenuItem.Enabled;
+        gtkMenuItem.TooltipText = winformsMenuItem.ToolTipText;
+        gtkMenuItem.Visible = winformsMenuItem.Visible;
+        gtkMenuItem.Sensitive = winformsMenuItem.Enabled;
 
         gtkMenuItem.Activated += (sender, e) =>
-          DBusBackgroundWorker.InvokeWinformsThread((Action)winformMenuItem.PerformClick);
+          GtkBackgroundWorker.InvokeWinformsThread(
+            (Action)winformsMenuItem.PerformClick);
 
-        winformMenuItem.TextChanged +=
-          (sender, e) => DBusBackgroundWorker.InvokeGtkThread(() =>
-        {
-          var label = gtkMenuItem.Child as Gtk.Label;
-          if (label != null) {
-            label.Text = winformMenuItem.Text;
-          }
-        }
-        );
-        winformMenuItem.EnabledChanged += (sender, e) =>
-          DBusBackgroundWorker.InvokeGtkThread
-            (() => gtkMenuItem.Sensitive = winformMenuItem.Enabled);
-        winformMenuItem.VisibleChanged += (sender, e) =>
-          DBusBackgroundWorker.InvokeGtkThread
-            (() => gtkMenuItem.Visible = winformMenuItem.Visible);
+        winformsMenuItem.TextChanged += (sender, e) =>
+          GtkBackgroundWorker.InvokeGtkThread(() => {
+            var label = gtkMenuItem.Child as Gtk.Label;
+            if (label != null) {
+              label.Text = winformsMenuItem.Text;
+            }
+          });
+
+        winformsMenuItem.EnabledChanged += (sender, e) =>
+          GtkBackgroundWorker.InvokeGtkThread(() =>
+            gtkMenuItem.Sensitive = winformsMenuItem.Enabled);
+
+        winformsMenuItem.VisibleChanged += (sender, e) =>
+          GtkBackgroundWorker.InvokeGtkThread(() =>
+            gtkMenuItem.Visible = winformsMenuItem.Visible);
 
         gtkMenuItem.Show();
-        gtkMenuShell.Insert(gtkMenuItem,
-                            winformMenuItem.Owner.Items.IndexOf(winformMenuItem));
+        gtkMenuShell.Insert(
+          gtkMenuItem, winformsMenuItem.Owner.Items.IndexOf(winformsMenuItem));
 
-        if (winformMenuItem.HasDropDownItems) {
+        if (winformsMenuItem.HasDropDownItems) {
           var subMenu = new Gtk.Menu();
-          foreach(System.Windows.Forms.ToolStripItem dropDownItem in
-                  winformMenuItem.DropDownItems)
-          {
-            ConvertAndAddMenuItem (dropDownItem, subMenu);
+          foreach (ToolStripItem dropDownItem in
+                   winformsMenuItem.DropDownItems) {
+            ConvertAndAddMenuItem(dropDownItem, subMenu);
           }
-          gtkMenuItem.Submenu = subMenu;
 
-          winformMenuItem.DropDown.ItemAdded += (sender, e) =>
-            DBusBackgroundWorker.InvokeGtkThread
-              (() => ConvertAndAddMenuItem (e.Item, subMenu));
+          gtkMenuItem.Submenu = subMenu;
+          winformsMenuItem.DropDown.ItemAdded += (sender, e) =>
+            GtkBackgroundWorker.InvokeGtkThread(() =>
+              ConvertAndAddMenuItem(e.Item, subMenu));
         }
-      } else if (item is System.Windows.Forms.ToolStripSeparator) {
+
+        return;
+      }
+
+      if (item is ToolStripSeparator) {
         var gtkSeparator = new Gtk.SeparatorMenuItem();
-        gtkSeparator.Show ();
-        gtkMenuShell.Insert(gtkSeparator, item.Owner.Items.IndexOf(item));
-      } else {
-        Debug.Fail("Unexpected menu item");
+        gtkSeparator.Show();
+        gtkMenuShell.Insert(
+          gtkSeparator, item.Owner.Items.IndexOf(item));
       }
     }
 
     private void OnActivateWorkaroundTimerTick(object sender, EventArgs e)
     {
-      // There seems to be a bug? in Mono where if you change Visible from
-      // false to true and WindowState from Minimized to !Minimized and then call
-      // Activate() all in the same method call, then the icon in the launcher
-      // is resored, but the window is not shown. To work around this, we use a
-      // timer to invoke Activate() a second time to get the window to show.
-
       activateWorkaroundTimer.Stop();
-      DBusBackgroundWorker.InvokeWinformsThread
-        ((Action)pluginHost.MainWindow.Activate);
+      GtkBackgroundWorker.InvokeWinformsThread(
+        (Action)pluginHost.MainWindow.Activate);
     }
 
-    byte[] ResizeImage(Image image, int width, int height)
+    private static byte[] ResizeImage(Image image, int width, int height)
     {
-      var stream = new MemoryStream();
-      image.Save(stream, ImageFormat.Png);
-      try {
-        var wand = new MagickWand();
-        wand.ReadImageBlob(stream.ToArray());
-        wand.ResizeImage(width, height, FilterType.Mitchell, 0.5);
-        return wand.GetImageBlob();
-      } catch (Exception ex) {
-        Debug.Fail(ex.ToString());
+      var destination = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+      using (var graphics = Graphics.FromImage(destination)) {
+        graphics.CompositingMode = CompositingMode.SourceCopy;
+        graphics.CompositingQuality = CompositingQuality.HighQuality;
+        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        graphics.SmoothingMode = SmoothingMode.HighQuality;
+        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-        // http://stackoverflow.com/a/24199315/1976323
-
-        var destRect = new Rectangle(0, 0, width, height);
-        var destImage = new Bitmap(width, height);
-
-        destImage.SetResolution(image.HorizontalResolution, image.VerticalResolution);
-
-        using (var graphics = Graphics.FromImage(destImage))
-        {
-          graphics.CompositingMode = CompositingMode.SourceCopy;
-          graphics.CompositingQuality = CompositingQuality.HighQuality;
-          graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-          graphics.SmoothingMode = SmoothingMode.HighQuality;
-          graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-          using (var wrapMode = new ImageAttributes())
-          {
-            wrapMode.SetWrapMode(WrapMode.TileFlipXY);
-            graphics.DrawImage(image, destRect, 0, 0, image.Width,image.Height, GraphicsUnit.Pixel, wrapMode);
-          }
+        using (var wrapMode = new ImageAttributes()) {
+          wrapMode.SetWrapMode(WrapMode.TileFlipXY);
+          graphics.DrawImage(
+            image, new Rectangle(0, 0, width, height),
+            0, 0, image.Width, image.Height,
+            GraphicsUnit.Pixel, wrapMode);
         }
-
-        stream.Seek(0, SeekOrigin.Begin);
-        destImage.Save(stream, ImageFormat.Png);
       }
-      return stream.ToArray();
+
+      using (destination)
+      using (var stream = new MemoryStream()) {
+        destination.Save(stream, ImageFormat.Png);
+        return stream.ToArray();
+      }
     }
   }
 }
