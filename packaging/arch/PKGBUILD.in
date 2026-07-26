@@ -1,0 +1,28 @@
+pkgname=keepass-plugin-keebuntu-status-notifier
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='StatusNotifierItem tray integration for KeePass 2.x on Linux'
+arch=('any')
+url='https://github.com/wx-projects/Keebuntu'
+license=('GPL-2.0-or-later' 'MIT')
+depends=('keepass' 'mono' 'gtk-sharp-2' 'dbus-glib')
+conflicts=('keebuntu-git')
+provides=('keepass-plugin-status-notifier')
+source=("https://github.com/wx-projects/Keebuntu/releases/download/v${pkgver}/keebuntu-status-notifier-${pkgver}.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  local payload="$srcdir/keebuntu-status-notifier-$pkgver"
+
+  install -dm755 "$pkgdir/usr/share/keepass/Plugins/keebuntu"
+  install -m644 "$payload/plugins/"*.dll \
+    "$pkgdir/usr/share/keepass/Plugins/keebuntu/"
+
+  install -dm755 "$pkgdir/usr/share/icons"
+  cp -a "$payload/icons/." "$pkgdir/usr/share/icons/"
+
+  install -Dm644 "$payload/COPYRIGHT" \
+    "$pkgdir/usr/share/licenses/$pkgname/COPYRIGHT"
+  install -Dm644 "$payload/THIRD_PARTY_NOTICES.md" \
+    "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY_NOTICES.md"
+}

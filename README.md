@@ -1,127 +1,93 @@
-Keebuntu
-========
+# Keebuntu
 
-KeePass 2.x plugins that provide Linux Desktop integration. These are
-primarily targeted for Ubuntu (but can work on other distros as well).
+Keebuntu contains Linux desktop integration plugins for KeePass 2.x running
+under Mono. This fork currently maintains and releases the **Status Notifier**
+plugin. The legacy GTK tray icon and Unity launcher sources remain in the
+repository but are not included in current release packages.
 
+## Status Notifier
 
-Status Notifier
-===============
+The plugin exports a KDE StatusNotifierItem and D-Bus menu. It is intended for
+KDE Plasma and also works with desktop panels that provide a compatible
+AppIndicator/StatusNotifier host.
 
-Provides a notification tray icon for KeePass on Plasma/KDE5. Also works with
-GNOME desktop via [gnome-shell-extension-appindicator][1] (installed by default
-as a dependency of the `ubuntu-desktop` package).
+The maintained implementation:
 
-[1]: https://packages.ubuntu.com/source/bionic/gnome/gnome-shell-extension-appindicator
+- detects KeePass at the standard Arch Linux and Debian/Ubuntu paths;
+- removes the obsolete ImageMagick 6 runtime dependency;
+- unregisters its D-Bus object during shutdown;
+- disables the duplicate Mono WinForms tray icon only after successful startup;
+- invokes KeePass' own **Tray / Untray** command so existing lock-on-minimize
+  settings continue to apply.
 
-![Plasma status notifier screenshot](doc/images/plasma-status-notifier-screenshot.png)
+Do not install this plugin together with Keebuntu's classic tray icon or another
+KeePass application-indicator plugin.
 
-#### Background
+## Release packages
 
-The built-in notification tray icon for KeePass does not display in the panel.
-This is because notification tray support for WinForms applications is broken
-in Mono.
+Each `vX.Y.Z` GitHub Release contains:
 
-#### Package
+- `keebuntu-status-notifier-X.Y.Z.tar.gz`: generic Linux payload and installer;
+- `keepass2-plugin-status-notifier_X.Y.Z_all.deb`: Debian/Ubuntu package;
+- `keepass-plugin-keebuntu-status-notifier-aur-X.Y.Z.tar.gz`: `PKGBUILD` and
+  `.SRCINFO` ready for AUR publication;
+- `SHA256SUMS`: checksums for all release assets.
 
-`keepass2-plugin-status-notifier`
+### Generic installation
 
-**Note:** this package conflicts with `keepass2-plugin-tray-icon` (you can only
-have one of these installed at a time). Compare the usages to decide which
-package you want to install.
+Extract the release archive, enter its directory, then run as root:
 
-#### Usage
-
-In KDE, left-clicking the icon trays and untrays the KeePass application.
-Right-clicking the icon displays the menu.
-
-In GNOME Shell right-clicking and left-clicking both show the menu.
-Double-clicking will tray or untray the KeePass application.
-
-
-Classic Tray Icon
-=================
-
-Provides a notification tray icon for KeePass.
-
-![MATE tray icon screenshot](doc/images/mate-tray-icon-screenshot.png)
-
-Tested with the following desktops:
-
-* Cinnamon
-* MATE
-
-Does not work with:
-
-* Ubuntu Unity
-
-#### Background
-
-The built-in notification tray icon for KeePass does not display in the panel.
-This is because notification tray support for WinForms applications is broken
-in Mono.
-
-#### Package
-
-`keepass2-plugin-tray-icon`
-
-**Note:** this package conflicts with `keepass2-plugin-application-indicator`
-(you cannot have both installed at the same time). Compare the usages to decide
-which package you want to install.
-
-#### Usage
-
-Left-clicking the icon will activate the KeePass window. Right-clicking the
-icon displays the menu.
-
-
-Launcher Quicklist
-==================
-
-Takes menu items from notification tray icon and displays them in the Unity
-Launcher menu. It also works with the [plank][3] dock (installed by default in
-elementary OS).
-
-[3]: https://packages.ubuntu.com/bionic/plank
-
-![Ubuntu launcher screenshot](doc/images/ubuntu-launcher-screenshot.png)
-
-#### Background
-
-The built-in notification tray icon for KeePass does not display in the panel.
-This is because the Ubuntu Unity Desktop only supports application indicator
-type tray icons. This plugin provides an alternative means of accessing the
-menu items of the tray icon.
-
-#### Package
-
-`keepass2-plugin-launcher`
-
-#### Usage
-
-Right-click on the KeePass 2.x icon in the launcher. You will find menu items
-such as Lock/Unlock Workspace and Generate Password….
-
-
------
-
-
-Binary Packages
-===============
-
-On Ubuntu and derivative systems, you can install via ppa:
-
-```
-sudo apt-add-repository ppa:dlech/keepass2-plugins
-sudo apt-get update
-sudo apt-get install <list-of-package-names>
+```bash
+./install.sh
 ```
 
-The latest versions are in the beta ppa:
-```
-sudo apt-add-repository ppa:dlech/keepass2-plugins-beta
-sudo apt-get update
-sudo apt-get install <list-of-package-names>
+The installer detects `/usr/share/keepass` and `/usr/lib/keepass2`. For a custom
+KeePass application directory:
+
+```bash
+./install.sh --app-dir /absolute/path/to/keepass
 ```
 
-On Arch Linux, you can try https://aur.archlinux.org/packages/keebuntu-git/ (outdated)
+### Debian/Ubuntu
+
+```bash
+sudo apt install ./keepass2-plugin-status-notifier_X.Y.Z_all.deb
+```
+
+### Arch Linux
+
+Extract the AUR source archive and build it with `makepkg`. The package depends
+on `keepass`, `mono`, `gtk-sharp-2` and `dbus-glib`.
+
+## Building from source
+
+Install KeePass, Mono/xbuild, GTK# 2, dbus-sharp and dbus-sharp-glib development
+packages, then run:
+
+```bash
+./build-status-notifier.sh
+./packaging/debian/build-deb.sh
+./packaging/arch/build-aur-source.sh
+```
+
+To build against a non-standard KeePass installation:
+
+```bash
+KEEPASS_EXE=/absolute/path/to/KeePass.exe ./build-status-notifier.sh
+```
+
+Generated files are written only to `build/` and `dist/`.
+
+## Legacy plugins
+
+The following upstream components remain available as unmaintained source code:
+
+- `GtkStatusIcon`: classic GTK status icon for older Cinnamon/MATE setups;
+- `UnityLauncherPlugin`: Unity launcher quicklist integration.
+
+They are intentionally excluded from the maintained Status Notifier release.
+
+## License
+
+Keebuntu is licensed under GPL-2.0-or-later. Release archives also contain the
+MIT-licensed managed dbus-sharp assemblies; see `THIRD_PARTY_NOTICES.md`.

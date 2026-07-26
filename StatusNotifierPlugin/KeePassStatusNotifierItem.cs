@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 
 using DBus;
 using Keebuntu.DBus;
@@ -11,17 +10,22 @@ namespace KeebuntuStatusNotifier
 {
   public class KeePassStatusNotifierItem : MenuStripDBusMenu, IStatusNotifierItem
   {
-    IPluginHost pluginHost;
-    ObjectPath menuPath;
+    private readonly IPluginHost pluginHost;
+    private readonly ObjectPath menuPath;
+    private readonly Action activateAction;
 
-    public KeePassStatusNotifierItem(IPluginHost pluginHost, ObjectPath menuPath)
-      : base (pluginHost.MainWindow.TrayContextMenu, pluginHost.MainWindow)
+    public KeePassStatusNotifierItem(IPluginHost pluginHost,
+      ObjectPath menuPath, Action activateAction)
+      : base(pluginHost.MainWindow.TrayContextMenu, pluginHost.MainWindow)
     {
+      if (activateAction == null) {
+        throw new ArgumentNullException("activateAction");
+      }
+
       this.pluginHost = pluginHost;
       this.menuPath = menuPath;
+      this.activateAction = activateAction;
     }
-
-
 
     #region IStatusNotifierItem implementation
 
@@ -32,7 +36,7 @@ namespace KeebuntuStatusNotifier
     }
 
     public string Title {
-      get { return KeePass.Program.MainForm.Text; }
+      get { return pluginHost.MainWindow.Text; }
     }
 
     string IStatusNotifierItem.Status { get { return "Active"; } }
@@ -45,66 +49,29 @@ namespace KeebuntuStatusNotifier
 
     public string IconName { get { return "keepass2-locked"; } }
 
-    //public KDbusImageVector IconPixmap { get { return null; } }
-
-    // public string OverlayIconName { get { return null; } }
-
-    //public KDbusImageVector OverlayIconPixmap { get { return null; } }
-
-    //public string AttentionIconName { get { return null; } }
-
-    //public KDbusImageVector AttentionIconPixmap { get { return null; } }
-
-    //public string AttentionMovieName { get { return null; } }
-
-//    public Tooltip Tooltip {
-//      get {
-//        return new Tooltip() {
-//          IconName = "keepass2-locked",
-//          IconPixmap = KDbusImageVector.None,
-//          Title = "title",
-//          Description = "tip",
-//        };
-//      }
-//    }
-
     public void ContextMenu(int x, int y)
     {
-      // This is not called since we have implemented the Menu property
-      throw new NotImplementedException();
+      // The exported Menu property is used by StatusNotifier hosts.
     }
 
     public void Activate(int x, int y)
     {
-      DBusBackgroundWorker.InvokeWinformsThread(() => {
-        if (pluginHost.MainWindow.Visible) {
-          pluginHost.MainWindow.Hide();
-        } else {
-          pluginHost.MainWindow.EnsureVisibleForegroundWindow(true, true);
-        }
-      });
+      DBusBackgroundWorker.InvokeWinformsThread(activateAction);
     }
 
     public void SecondaryActivate(int x, int y)
     {
-      throw new NotImplementedException();
+      // No secondary action is defined.
     }
 
     public void Scroll(int delta, string orientation)
     {
-      throw new NotImplementedException();
+      // Scrolling over the tray icon intentionally has no action.
     }
 
     public event Action NewTitle;
-
     public event Action NewIcon;
-
-    //public event Action NewAttentionIcon;
-
     public event Action NewOverlayIcon;
-
-    //public event Action NewToolTip;
-
     public event Action<string> NewStatus;
 
     #endregion

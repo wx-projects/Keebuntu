@@ -9,7 +9,7 @@
     <OutputType>Library</OutputType>
     <RootNamespace>Keebuntu.DBus</RootNamespace>
     <AssemblyName>DBus</AssemblyName>
-    <ReleaseVersion>0.4.0</ReleaseVersion>
+    <ReleaseVersion>0.5.0</ReleaseVersion>
     <Description>Common DBus components for Keebuntu plugins</Description>
     <SynchReleaseVersion>False</SynchReleaseVersion>
   </PropertyGroup>
@@ -69,10 +69,4 @@
       </Properties>
     </MonoDevelop>
   </ProjectExtensions>
-  <ItemGroup>
-    <ProjectReference Include="..\ImageMagick\ImageMagick.csproj">
-      <Project>{00BB4233-A62B-4B5F-9022-1C87157C9B37}</Project>
-      <Name>ImageMagick</Name>
-    </ProjectReference>
-  </ItemGroup>
 </Project>

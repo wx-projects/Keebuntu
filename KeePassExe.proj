@@ -1,28 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<!-- 
-This file is imported by other project files. It adds a reference to the local
-copy of KeePass.exe. The location of KeePass.exe will be autodetected if you
-installed KeePass using the keepass2 package. You can also specify any location
-by replacing the first comment below.
- -->
+<!--
+This file is imported by the plugin project files and adds a reference to
+KeePass.exe. KeePassExePath can be supplied explicitly on the build command
+line. When it is not supplied, the standard Arch Linux and Debian/Ubuntu
+locations are detected in that order.
+-->
 
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <KeePassExePath><!-- Add a path here to override the default path to KeePass.exe --></KeePassExePath>
-  </PropertyGroup>  
-  
-  <PropertyGroup Condition="'$(KeePassExePath)'==''">
-    <KeePassExePath>/usr/lib/keepass2/KeePass.exe</KeePassExePath>
-  </PropertyGroup>  
-  <PropertyGroup Condition="!Exists('$(KeePassExePath)')">
-    <KeePassExePath></KeePassExePath>
-  </PropertyGroup>  
-  
-  <ItemGroup>
+    <KeePassExePath Condition="'$(KeePassExePath)' == '' and Exists('/usr/share/keepass/KeePass.exe')">/usr/share/keepass/KeePass.exe</KeePassExePath>
+    <KeePassExePath Condition="'$(KeePassExePath)' == '' and Exists('/usr/lib/keepass2/KeePass.exe')">/usr/lib/keepass2/KeePass.exe</KeePassExePath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(KeePassExePath)')">
     <Reference Include="KeePass.exe">
       <HintPath>$(KeePassExePath)</HintPath>
+      <Private>False</Private>
     </Reference>
   </ItemGroup>
-</Project>
 
+  <Target Name="ValidateKeePassExePath" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(KeePassExePath)' == '' or !Exists('$(KeePassExePath)')"
+      Text="KeePass.exe was not found. Pass /p:KeePassExePath=/absolute/path/to/KeePass.exe." />
+  </Target>
+</Project>

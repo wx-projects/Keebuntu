@@ -1,11 +1,10 @@
 using System;
-using System.Windows.Forms;
 using System.Collections.Generic;
-using System.IO;
-using System.Drawing.Imaging;
-using ImageMagick.MagickWand;
-using ImageMagick.MagickCore;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Windows.Forms;
 
 namespace Keebuntu.DBus
 {
@@ -61,51 +60,49 @@ namespace Keebuntu.DBus
     public override byte[] IconData {
       get {
         if (mItem.Image == null) {
-            return new byte[0];
-          }
-          if (!mItem.Enabled) {
-            return ApplyDisabledStyling(mItem.Image);
-          }
-          var memStream = new MemoryStream();
+          return new byte[0];
+        }
+        if (!mItem.Enabled) {
+          return ApplyDisabledStyling(mItem.Image);
+        }
+        using (var memStream = new MemoryStream()) {
           mItem.Image.Save(memStream, ImageFormat.Png);
           return memStream.ToArray();
+        }
       }
     }
 
     public override string[][] Shortcut {
       get {
         var keyList = new List<string>();
-          var menuItem = mItem as ToolStripMenuItem;
-          if (menuItem != null) {
-            if (menuItem.ShortcutKeys.HasFlag(Keys.Alt)) {
-              keyList.Add("Alt");
-            }
-            if (menuItem.ShortcutKeys.HasFlag(Keys.Control)) {
-              keyList.Add("Control");
-            }
-            if (menuItem.ShortcutKeys.HasFlag(Keys.Shift)) {
-              keyList.Add("Shift");
-            }
-            var keyCode = menuItem.ShortcutKeys & Keys.KeyCode;
-            if (keyCode != Keys.None) {
-              keyList.Add(keyCode.ToString());
-            }
-
+        var menuItem = mItem as ToolStripMenuItem;
+        if (menuItem != null) {
+          if (menuItem.ShortcutKeys.HasFlag(Keys.Alt)) {
+            keyList.Add("Alt");
           }
-          var shortcutList = new string[1][];
-          shortcutList[0] = keyList.ToArray();
-          return shortcutList;
+          if (menuItem.ShortcutKeys.HasFlag(Keys.Control)) {
+            keyList.Add("Control");
+          }
+          if (menuItem.ShortcutKeys.HasFlag(Keys.Shift)) {
+            keyList.Add("Shift");
+          }
+          var keyCode = menuItem.ShortcutKeys & Keys.KeyCode;
+          if (keyCode != Keys.None) {
+            keyList.Add(keyCode.ToString());
+          }
+        }
+        var shortcutList = new string[1][];
+        shortcutList[0] = keyList.ToArray();
+        return shortcutList;
       }
     }
 
     public override string ToggleType {
       get {
         var menuItem = mItem as ToolStripMenuItem;
-          if (menuItem != null) {
-            if (menuItem.CheckOnClick) {
-              return "checkmark";
-            }
-          }
+        if (menuItem != null && menuItem.CheckOnClick) {
+          return "checkmark";
+        }
         return base.ToggleType;
       }
     }
@@ -113,18 +110,16 @@ namespace Keebuntu.DBus
     public override int ToggleState {
       get {
         var menuItem = mItem as ToolStripMenuItem;
-          if (menuItem != null) {
-            switch (menuItem.CheckState) {
-              case CheckState.Checked:
-                return 1;
-              case CheckState.Unchecked:
-                return 0;
-              case CheckState.Indeterminate:
-                return 2; // just for fun
-              default:
-                break;
-            }
+        if (menuItem != null) {
+          switch (menuItem.CheckState) {
+            case CheckState.Checked:
+              return 1;
+            case CheckState.Unchecked:
+              return 0;
+            case CheckState.Indeterminate:
+              return 2;
           }
+        }
         return base.ToggleState;
       }
     }
@@ -132,11 +127,9 @@ namespace Keebuntu.DBus
     public override string ChildrenDisplay {
       get {
         var dropDownItem = mItem as ToolStripDropDownItem;
-          if (dropDownItem != null) {
-            if (dropDownItem.HasDropDownItems) {
-              return "submenu";
-            }
-          }
+        if (dropDownItem != null && dropDownItem.HasDropDownItems) {
+          return "submenu";
+        }
         return base.ChildrenDisplay;
       }
     }
@@ -186,32 +179,45 @@ namespace Keebuntu.DBus
           DBusBackgroundWorker.InvokeWinformsThread(() => mItem.PerformClick());
           break;
         case "hovered":
-          // TODO - hack hovered event?
-          break;
         case "opened":
-          break;
         case "closed":
           break;
       }
     }
 
     /// <summary>
-    /// Uses ImageMagick to convert icon to grayscale and lighten it
+    /// Creates a disabled-looking PNG without depending on an ImageMagick ABI.
     /// </summary>
-    private byte[] ApplyDisabledStyling(System.Drawing.Image image)
+    private byte[] ApplyDisabledStyling(Image image)
     {
-      var stream = new MemoryStream();
-      image.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-      try {
-        var wand = new MagickWand();
-        wand.ReadImageBlob(stream.ToArray());
-        wand.ImageType = ImageType.GrayscaleMatte;
-        wand.EvaluateImage(MagickEvaluateOperator.DivideEvaluateOperator, 4);
-        return wand.GetImageBlob();
-      } catch (Exception ex) {
-        Debug.Fail(ex.ToString());
+      using (var original = new MemoryStream()) {
+        image.Save(original, ImageFormat.Png);
+        try {
+          using (var bitmap = new Bitmap(image.Width, image.Height,
+            PixelFormat.Format32bppArgb))
+          using (var graphics = Graphics.FromImage(bitmap))
+          using (var attributes = new ImageAttributes())
+          using (var output = new MemoryStream()) {
+            var matrix = new ColorMatrix(new float[][] {
+              new float[] { 0.30f, 0.30f, 0.30f, 0.00f, 0.00f },
+              new float[] { 0.59f, 0.59f, 0.59f, 0.00f, 0.00f },
+              new float[] { 0.11f, 0.11f, 0.11f, 0.00f, 0.00f },
+              new float[] { 0.00f, 0.00f, 0.00f, 0.55f, 0.00f },
+              new float[] { 0.20f, 0.20f, 0.20f, 0.00f, 1.00f }
+            });
+            attributes.SetColorMatrix(matrix);
+            graphics.DrawImage(image,
+              new Rectangle(0, 0, image.Width, image.Height),
+              0, 0, image.Width, image.Height,
+              GraphicsUnit.Pixel, attributes);
+            bitmap.Save(output, ImageFormat.Png);
+            return output.ToArray();
+          }
+        } catch (Exception ex) {
+          Debug.Fail(ex.ToString());
+          return original.ToArray();
+        }
       }
-      return stream.ToArray();
     }
   }
 }

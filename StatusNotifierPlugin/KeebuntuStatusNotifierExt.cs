@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
+using System.Windows.Forms;
 using KeePass.Plugins;
 using Keebuntu.DBus;
 using KeePassLib.Utility;
@@ -12,90 +13,173 @@ namespace KeebuntuStatusNotifier
 {
   public class KeebuntuStatusNotifierExt : Plugin
   {
-    IPluginHost pluginHost;
-    KeePassStatusNotifierItem statusNotifier;
+    private IPluginHost pluginHost;
+    private KeePassStatusNotifierItem statusNotifier;
+    private ObjectPath applicationPath;
+    private bool dbusWorkerRequested;
+    private bool objectRegistered;
 
     public override bool Initialize(IPluginHost host)
     {
+      if (host == null) {
+        throw new ArgumentNullException("host");
+      }
+
       pluginHost = host;
 
-      // purposely break the winforms tray icon so it is not displayed
-      var mainWindowType = pluginHost.MainWindow.GetType();
-      var ntfTrayField = mainWindowType.GetField("m_ntfTray",
-        BindingFlags.Instance | BindingFlags.NonPublic);
-      var ntfField = ntfTrayField.FieldType.GetField("m_ntf",
-        BindingFlags.Instance | BindingFlags.NonPublic);
-      ntfField.SetValue(ntfTrayField.GetValue(pluginHost.MainWindow), null);
-
-      var threadStarted = false;
       try {
         DBusBackgroundWorker.Request();
-        threadStarted = true;
+        dbusWorkerRequested = true;
         DBusBackgroundWorker.InvokeGtkThread((Action)GtkDBusInit).Wait();
+
+        // Disable the Mono WinForms tray icon only after the StatusNotifierItem
+        // has been registered successfully. This preserves the original icon if
+        // initialization fails.
+        DisableBuiltInTrayIcon();
+        return true;
       } catch (Exception ex) {
+        Terminate();
         MessageService.ShowWarning(
           "KeebuntuStatusNotifier plugin failed to start.",
           ex.ToString());
-        if (threadStarted) {
-          Terminate();
-        }
         return false;
       }
-      return true;
     }
 
     public override void Terminate()
     {
-      try {
-        DBusBackgroundWorker.Release();
-      } catch (Exception ex) {
-        Debug.Fail(ex.ToString());
+      if (objectRegistered && applicationPath != null && dbusWorkerRequested) {
+        try {
+          DBusBackgroundWorker.InvokeGtkThread(() => {
+            Bus.Session.Unregister(applicationPath);
+          }).Wait();
+        } catch (Exception ex) {
+          Debug.Fail(ex.ToString());
+        }
+      }
+
+      objectRegistered = false;
+      applicationPath = null;
+      statusNotifier = null;
+
+      if (dbusWorkerRequested) {
+        try {
+          DBusBackgroundWorker.Release();
+        } catch (Exception ex) {
+          Debug.Fail(ex.ToString());
+        } finally {
+          dbusWorkerRequested = false;
+        }
       }
     }
 
+    private void DisableBuiltInTrayIcon()
+    {
+      var mainWindowType = pluginHost.MainWindow.GetType();
+      var ntfTrayField = mainWindowType.GetField("m_ntfTray",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+      if (ntfTrayField == null) {
+        throw new MissingFieldException(mainWindowType.FullName, "m_ntfTray");
+      }
+
+      var ntfTray = ntfTrayField.GetValue(pluginHost.MainWindow);
+      if (ntfTray == null) {
+        return;
+      }
+
+      var ntfField = ntfTrayField.FieldType.GetField("m_ntf",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+      if (ntfField == null) {
+        throw new MissingFieldException(ntfTrayField.FieldType.FullName, "m_ntf");
+      }
+
+      var notifyIcon = ntfField.GetValue(ntfTray) as NotifyIcon;
+      if (notifyIcon != null) {
+        notifyIcon.Visible = false;
+        notifyIcon.Dispose();
+      }
+
+      ntfField.SetValue(ntfTray, null);
+    }
+
+    private Action GetTrayToggleAction()
+    {
+      var mainWindowType = pluginHost.MainWindow.GetType();
+      var trayToggleField = mainWindowType.GetField("m_ctxTrayTray",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+      if (trayToggleField == null) {
+        throw new MissingFieldException(mainWindowType.FullName, "m_ctxTrayTray");
+      }
+
+      var trayToggleItem = trayToggleField.GetValue(pluginHost.MainWindow)
+        as ToolStripMenuItem;
+      if (trayToggleItem == null) {
+        throw new InvalidOperationException(
+          "KeePass tray toggle menu item is unavailable.");
+      }
+
+      return () => trayToggleItem.PerformClick();
+    }
+
     /// <summary>
-    /// Initialize Gtk and DBus stuff
+    /// Initializes GTK and D-Bus integration on the GTK worker thread.
     /// </summary>
     private void GtkDBusInit()
     {
-      /* setup StatusNotifierItem */
-
       const string sniWatcherServiceName = "org.kde.StatusNotifierWatcher";
       const string sniWatcherPath = "/StatusNotifierWatcher";
       const string applicationPathTemplate = "/org/keepass/KeePass{0}";
 
       var watcher = Bus.Session.GetObject<IStatusNotifierWatcher>(
         sniWatcherServiceName, new ObjectPath(sniWatcherPath));
+      if (watcher == null) {
+        throw new InvalidOperationException(
+          "org.kde.StatusNotifierWatcher is unavailable.");
+      }
+
 #if DEBUG
-      watcher.StatusNotifierItemRegistered += (obj) =>
-        Console.WriteLine(obj);
+      watcher.StatusNotifierItemRegistered += (obj) => Console.WriteLine(obj);
 #endif
 
       var mainWindowType = pluginHost.MainWindow.GetType();
       var cxtTrayField = mainWindowType.GetField("m_ctxTray",
         BindingFlags.Instance | BindingFlags.NonPublic);
+      if (cxtTrayField == null) {
+        throw new MissingFieldException(mainWindowType.FullName, "m_ctxTray");
+      }
+
       var ctxTray = cxtTrayField.GetValue(pluginHost.MainWindow);
+      if (ctxTray == null) {
+        throw new InvalidOperationException("KeePass tray menu is unavailable.");
+      }
+
       var onOpening = ctxTray.GetType().GetMethod("OnOpening",
         BindingFlags.Instance | BindingFlags.NonPublic);
       var onOpened = ctxTray.GetType().GetMethod("OnOpened",
         BindingFlags.Instance | BindingFlags.NonPublic);
+      if (onOpening == null || onOpened == null) {
+        throw new MissingMethodException(
+          ctxTray.GetType().FullName, "OnOpening/OnOpened");
+      }
 
-      var applicationPath = new ObjectPath(string.Format(applicationPathTemplate,
+      applicationPath = new ObjectPath(string.Format(applicationPathTemplate,
         pluginHost.MainWindow.Handle));
-      statusNotifier = new KeePassStatusNotifierItem(pluginHost, applicationPath);
+      statusNotifier = new KeePassStatusNotifierItem(
+        pluginHost, applicationPath, GetTrayToggleAction());
 
-      // Synthesize menu open events. These are expected by KeePass and
-      // other plugins
+      // Synthesize menu open events. KeePass and other plugins expect these
+      // events before the exported D-Bus menu is shown.
       statusNotifier.Showing += (sender, e) => {
         DBusBackgroundWorker.InvokeWinformsThread(() =>
-          onOpening.Invoke(ctxTray, new[] { new CancelEventArgs() }));
+          onOpening.Invoke(ctxTray, new object[] { new CancelEventArgs() }));
       };
       statusNotifier.Shown += (sender, e) => {
         DBusBackgroundWorker.InvokeWinformsThread(() =>
-          onOpened.Invoke(ctxTray, new[] { new CancelEventArgs() }));
+          onOpened.Invoke(ctxTray, new object[] { EventArgs.Empty }));
       };
 
       Bus.Session.Register(applicationPath, statusNotifier);
+      objectRegistered = true;
       watcher.RegisterStatusNotifierItem(applicationPath.ToString());
     }
   }
