@@ -17,6 +17,10 @@ package() {
   install -dm755 "$pkgdir/usr/share/keepass/Plugins/keebuntu"
   install -m644 "$payload/plugins/"*.dll \
     "$pkgdir/usr/share/keepass/Plugins/keebuntu/"
+  install -m644 "$payload/plugins/"*.dll.config \
+    "$pkgdir/usr/share/keepass/Plugins/keebuntu/"
+
+  test -f "$pkgdir/usr/share/keepass/Plugins/keebuntu/dbus-sharp-glib.dll.config"
 
   install -dm755 "$pkgdir/usr/share/icons"
   cp -a "$payload/icons/." "$pkgdir/usr/share/icons/"

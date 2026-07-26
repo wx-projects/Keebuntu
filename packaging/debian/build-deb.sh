@@ -21,11 +21,15 @@ mkdir -p \
 
 install -m 0644 "$PAYLOAD_DIR/plugins/"*.dll \
   "$DEB_ROOT/usr/lib/keepass2/Plugins/keebuntu/"
+install -m 0644 "$PAYLOAD_DIR/plugins/"*.dll.config \
+  "$DEB_ROOT/usr/lib/keepass2/Plugins/keebuntu/"
 cp -a "$PAYLOAD_DIR/icons/." "$DEB_ROOT/usr/share/icons/"
 install -m 0644 "$PAYLOAD_DIR/COPYRIGHT" \
   "$DEB_ROOT/usr/share/doc/keepass2-plugin-status-notifier/copyright"
 install -m 0644 "$PAYLOAD_DIR/THIRD_PARTY_NOTICES.md" \
   "$DEB_ROOT/usr/share/doc/keepass2-plugin-status-notifier/THIRD_PARTY_NOTICES.md"
+
+test -f "$DEB_ROOT/usr/lib/keepass2/Plugins/keebuntu/dbus-sharp-glib.dll.config"
 
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF_CONTROL
 Package: keepass2-plugin-status-notifier
@@ -44,6 +48,6 @@ EOF_CONTROL
 rm -f "$OUTPUT"
 dpkg-deb --root-owner-group --build "$DEB_ROOT" "$OUTPUT"
 dpkg-deb --info "$OUTPUT" >/dev/null
-dpkg-deb --contents "$OUTPUT" >/dev/null
+dpkg-deb --contents "$OUTPUT" | grep -Fq './usr/lib/keepass2/Plugins/keebuntu/dbus-sharp-glib.dll.config'
 
 echo "Created $OUTPUT"

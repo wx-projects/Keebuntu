@@ -80,22 +80,28 @@ DBUS_DLL="$ROOT_DIR/DBus/bin/Release/DBus.dll"
 STATUS_NOTIFIER_DLL="$ROOT_DIR/StatusNotifierPlugin/bin/Release/KeebuntuStatusNotifier.dll"
 DBUS_SHARP_DLL="$(find_managed_assembly dbus-sharp.dll)"
 DBUS_SHARP_GLIB_DLL="$(find_managed_assembly dbus-sharp-glib.dll)"
+DBUS_SHARP_GLIB_CONFIG="$ROOT_DIR/packaging/dbus-sharp-glib.dll.config"
 
 for file in \
   "$DBUS_DLL" \
   "$STATUS_NOTIFIER_DLL" \
   "$DBUS_SHARP_DLL" \
-  "$DBUS_SHARP_GLIB_DLL"; do
+  "$DBUS_SHARP_GLIB_DLL" \
+  "$DBUS_SHARP_GLIB_CONFIG"; do
   [[ -s "$file" ]] || {
     echo "Error: expected build output is missing: $file" >&2
     exit 1
   }
 done
 
+grep -Fq 'dll="libglib-2.0-0.dll"' "$DBUS_SHARP_GLIB_CONFIG"
+grep -Fq 'target="libglib-2.0.so.0"' "$DBUS_SHARP_GLIB_CONFIG"
+
 install -m 0644 "$DBUS_DLL" "$PLUGIN_DIR/DBus.dll"
 install -m 0644 "$STATUS_NOTIFIER_DLL" "$PLUGIN_DIR/KeebuntuStatusNotifier.dll"
 install -m 0644 "$DBUS_SHARP_DLL" "$PLUGIN_DIR/dbus-sharp.dll"
 install -m 0644 "$DBUS_SHARP_GLIB_DLL" "$PLUGIN_DIR/dbus-sharp-glib.dll"
+install -m 0644 "$DBUS_SHARP_GLIB_CONFIG" "$PLUGIN_DIR/dbus-sharp-glib.dll.config"
 cp -a "$ROOT_DIR/StatusNotifierPlugin/Resources/icons/." "$PACKAGE_ROOT/icons/"
 install -m 0644 "$ROOT_DIR/README.md" "$PACKAGE_ROOT/README.md"
 install -m 0644 "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$PACKAGE_ROOT/THIRD_PARTY_NOTICES.md"
@@ -105,5 +111,7 @@ install -m 0755 "$ROOT_DIR/packaging/install.sh" "$PACKAGE_ROOT/install.sh"
 rm -f "$DIST_DIR/$PACKAGE_NAME.tar.gz"
 tar -C "$BUILD_DIR/package" -czf "$DIST_DIR/$PACKAGE_NAME.tar.gz" "$PACKAGE_NAME"
 tar -tzf "$DIST_DIR/$PACKAGE_NAME.tar.gz" >/dev/null
+tar -tzf "$DIST_DIR/$PACKAGE_NAME.tar.gz" |
+  grep -Fxq "$PACKAGE_NAME/plugins/dbus-sharp-glib.dll.config"
 
 echo "Created $DIST_DIR/$PACKAGE_NAME.tar.gz"

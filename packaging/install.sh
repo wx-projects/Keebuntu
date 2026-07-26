@@ -34,6 +34,9 @@ ICON_DEST="$DESTDIR/usr/share/icons"
 
 install -d "$PLUGIN_DEST" "$ICON_DEST"
 install -m 0644 "$SOURCE_DIR/plugins/"*.dll "$PLUGIN_DEST/"
+install -m 0644 "$SOURCE_DIR/plugins/"*.dll.config "$PLUGIN_DEST/"
 cp -a "$SOURCE_DIR/icons/." "$ICON_DEST/"
+
+test -f "$PLUGIN_DEST/dbus-sharp-glib.dll.config"
 
 echo "Installed Keebuntu Status Notifier into $PLUGIN_DEST"
