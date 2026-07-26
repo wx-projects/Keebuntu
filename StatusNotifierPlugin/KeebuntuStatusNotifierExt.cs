@@ -30,7 +30,12 @@ namespace KeebuntuStatusNotifier
       try {
         DBusBackgroundWorker.Request();
         dbusWorkerRequested = true;
-        DBusBackgroundWorker.InvokeGtkThread((Action)GtkDBusInit).Wait();
+
+        var initTask = DBusBackgroundWorker.InvokeGtkThread((Action)GtkDBusInit);
+        if (!initTask.Wait(TimeSpan.FromSeconds(10))) {
+          throw new TimeoutException(
+            "Timed out while registering the KeePass StatusNotifierItem.");
+        }
 
         // Disable the Mono WinForms tray icon only after the StatusNotifierItem
         // has been registered successfully. This preserves the original icon if
@@ -50,9 +55,12 @@ namespace KeebuntuStatusNotifier
     {
       if (objectRegistered && applicationPath != null && dbusWorkerRequested) {
         try {
-          DBusBackgroundWorker.InvokeGtkThread(() => {
+          var unregisterTask = DBusBackgroundWorker.InvokeGtkThread(() => {
             Bus.Session.Unregister(applicationPath);
-          }).Wait();
+          });
+          if (!unregisterTask.Wait(TimeSpan.FromSeconds(5))) {
+            Debug.Fail("Timed out while unregistering the StatusNotifierItem.");
+          }
         } catch (Exception ex) {
           Debug.Fail(ex.ToString());
         }
@@ -121,9 +129,6 @@ namespace KeebuntuStatusNotifier
       return () => trayToggleItem.PerformClick();
     }
 
-    /// <summary>
-    /// Initializes GTK and D-Bus integration on the GTK worker thread.
-    /// </summary>
     private void GtkDBusInit()
     {
       const string sniWatcherServiceName = "org.kde.StatusNotifierWatcher";
@@ -136,10 +141,6 @@ namespace KeebuntuStatusNotifier
         throw new InvalidOperationException(
           "org.kde.StatusNotifierWatcher is unavailable.");
       }
-
-#if DEBUG
-      watcher.StatusNotifierItemRegistered += (obj) => Console.WriteLine(obj);
-#endif
 
       var mainWindowType = pluginHost.MainWindow.GetType();
       var cxtTrayField = mainWindowType.GetField("m_ctxTray",
@@ -167,8 +168,6 @@ namespace KeebuntuStatusNotifier
       statusNotifier = new KeePassStatusNotifierItem(
         pluginHost, applicationPath, GetTrayToggleAction());
 
-      // Synthesize menu open events. KeePass and other plugins expect these
-      // events before the exported D-Bus menu is shown.
       statusNotifier.Showing += (sender, e) => {
         DBusBackgroundWorker.InvokeWinformsThread(() =>
           onOpening.Invoke(ctxTray, new object[] { new CancelEventArgs() }));
